@@ -20,10 +20,11 @@ T6 合成（inline，父级自己写；blockedBy 所有 verifier）
 
 要点：
 - 分支数量 **3-4**：`1 个 brief + 分支 + 对应 verifier + 1 个合成 ≤ 10`（见 `dag-schema.md` 的任务数上限）；确有 5-6 个主题就先合并成"主题簇"。
+- 分支标 `light`（检索类默认该这样）时任务数是 **5-6**，不触发 Gate 1；标 `standard` 会翻倍到 8-10，就会停一次确认。这是成本差异，不是对错——想一步到位就 `light`，要交叉验证就接受那次确认。
 - 每个分支的 `completion_criteria` 要可检验（例：≥3 个一手来源，或 API 文档里的确切字段）。
 - T5 不可省：只找支持性证据的调研不可信。
 - 合成任务里显式要求**标注冲突**：「A 来源说 X，B 来源说 Y，差异原因未确认」。
-- 合成默认 `inline`。只有在已有 workflow 的末级做合成时，才用 `agent(..., {model:'deepseek-reasoner'})`——`inline` 没有 model 参数。
+- 合成默认 `inline`。只有在已有 workflow 的末级做合成时，才用 `agent(..., {model})`——`inline` 没有 model 参数。model id 以**部署模型目录**为准（本机：`deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro`；`deepseek-reasoner` 虽被接受但档位未核实）。
 - `hybrid` 时，扇出阶段一次 `workflow` 调用对应**同一波**的 N 个 lane 任务、共享同一个 `ref`；父级用脚本 `return.tasks[]` 逐条回填状态，再派出深挖的 `subagent` 任务。映射细节见本节末「hybrid 的 checkpoint 映射」。
 
 ## 2. `code_dev` — 实现 / 重构 / 修 bug

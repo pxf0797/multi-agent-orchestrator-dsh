@@ -96,7 +96,7 @@ wave 3   T6  合成（inline，父级自己写，blockedBy 所有 verifier）
 │   ├── role-templates.md          # 11 个角色的身份段与验收清单
 │   └── cc-to-dsh-mapping.md       # 与上游 Claude Code 版的逐项差异
 ├── templates/checkpoint.example.json
-├── tools/selfcheck.mjs            # 6 项结构自检
+├── tools/selfcheck.mjs            # 8 项结构自检
 └── docs/review-v1.2.0.md          # v1.2.0 评审：已核实事实 + 待修问题
 ```
 
@@ -117,7 +117,7 @@ wave 3   T6  合成（inline，父级自己写，blockedBy 所有 verifier）
 node tools/selfcheck.mjs      # 或 npm test
 ```
 
-检查 6 项：waves 是否满足波次公式、`plan`/`output` 是否同基准且带 `.dsh/orchestrator/` 前缀、枚举是否闭合（status / mode / role）、任务数是否在 3-10、`strict|tournament|adversarial` 是否都展开了 verifier、文件引用是否都存在。CI 会在每次 push 时跑同一套检查。
+检查 8 项：waves 是否满足波次公式、`plan`/`output` 是否同基准且带 `.dsh/orchestrator/` 前缀、枚举是否闭合（status / mode / role）、任务数是否在 3-10、`strict|tournament|adversarial` 是否都展开了 verifier、文件引用是否存在、SKILL.md 是否超出字符预算、以及文档里声明的检查项数是否与实际一致。CI 在每次 push 时跑同一套。
 
 ## 已在运行时核实的事实
 
@@ -139,17 +139,16 @@ node tools/selfcheck.mjs      # 或 npm test
 | [multi-agent-orchestrator-skill](https://github.com/pxf0797/multi-agent-orchestrator-skill) | Claude Code | 后台 Agent + Task 实体 + Agent Teams |
 | [multi-agent-orchestrator-codex](https://github.com/pxf0797/multi-agent-orchestrator-codex) | Codex CLI | Codex 原生子 Agent |
 | **本项目** | **DeepSeek Harness** | **波次屏障 + checkpoint JSON + workflow 脚本** |
-| [orchestrate-skill](https://github.com/pxf0797/orchestrate-skill) | DeepSeek Harness | workflow-first，无检查点，短任务优先 |
 
-DSH 版不是照搬：上游的调度循环建立在「后台完成通知驱动 turn」「Task 实体 ↔ JSON 双写」「PID 判活」三根柱子上，DSH 一根都没有。逐项处置（39 个平台耦合点）见 [references/cc-to-dsh-mapping.md](references/cc-to-dsh-mapping.md)。
+DSH 版不是照搬：上游的调度循环建立在「后台完成通知驱动 turn」「Task 实体 ↔ JSON 双写」「PID 判活」三根柱子上，DSH 一根都没有。逐项处置（39 个平台耦合点）见 [references/cc-to-dsh-mapping.md](references/cc-to-dsh-mapping.md)。DSH 上此前还有一个 workflow-first 的 `orchestrate` skill，其可用内容（判决 schema、PRE 前置、重试预算、成本护栏）已并入本项目，该 skill 已下线。
 
 ## 已知限制
 
-见 [docs/review-v1.2.0.md](docs/review-v1.2.0.md)。当前已知：
+见 [docs/review-v1.2.0.md](docs/review-v1.2.0.md) 与 [CHANGELOG.md](CHANGELOG.md)。v1.3.0 已修掉跨平台探测、并发上限、Gate 1 阈值、R2 任务映射等问题；仍存在的：
 
-- 环境探测写死 `pwsh`，在 macOS / Linux 上会失败并导致命令类验收降级（应以可用 shell 为准）。
-- `deep_research` 的默认形状（8-10 任务）必然触发 Gate 1 确认，与「纯读取型 ≤6 不停」的意图有张力。
-- `selfcheck` 只校验结构，查不出语义级矛盾。
+- `selfcheck` 只校验结构，查不出语义级矛盾（例如新增规则与旧规则互相拆台）。
+- 模型档位依赖部署目录：`deepseek-reasoner` 能被接受，但不在本机模型目录里，是否真路由到高价档未经核实。
+- `workflow` 脚本内部无断点，一次调用断了只能整段重跑。
 
 ## License
 

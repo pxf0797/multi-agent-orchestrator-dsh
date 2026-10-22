@@ -28,7 +28,7 @@
 - `verify: light` → 不生成任务（父级自查）。
 - `verify: strict` → 生成 `T5v1/T5v2/T5v3`，`completion_criteria` 分别锚定契约、事实、回归三个面；合成任务 `blockedBy` 三个 verifier，并自己按"≥2 pass"裁决。
 - `verify: tournament/adversarial` → 按上表展开，且**必须在 Gate 1 问过用户**。
-- **计数**：verifier 是正式任务，计入 3-10 任务数、并发上限、Gate 1 的「任务数 >6」。
+- **计数**：verifier 是正式任务，计入 3-10 任务数、并发上限、Gate 1 的「任务数 >8」。
 - **可合并**：同一波里多个**同构且 verify=light** 的任务，允许合并成 1 个 verifier 任务（`blockedBy` 写全部被验任务）。合并后该 verifier 的 `verify` 取被合并任务中的最高档，且 `completion_criteria` 必须逐条覆盖每个被验任务。
 
 ## 判定 → 状态：`verdict` 与 `status` 是两个轴
@@ -61,6 +61,23 @@ Standard 及以上**必填** `completion_criteria`（一句话可检验的通过
 - **验证强度写进 checkpoint 的 `tasks[].verify`**，恢复时保持一致，不许中途降级。
 - **成本要能说清**：Tournament/Adversarial 是常规路径的数倍，用它之前先问用户（Gate 1）。
 
+## 判决怎么收：用 schema，不要自由文本
+
+verifier 的判决固定为 `{pass, score, issues[], summary}`，`issues[]` 每条 `{severity, where, problem, fix}`，`severity` 只取 `critical|major|minor`。`workflow` 里用 `agent(..., {schema})` 让引擎校验；`subagent` 任务则把同样的 JSON 写进 `output`。
+
+**退回必须把 issues 原文回灌给产出者，不要二次概括**：
+
+```
+上一轮验收未通过，逐条修完再交付：
+1. [critical] src/auth/token.ts:42 — ttlSec=0 时 exp 早于签发时间；修法：≤0 直接抛 INVALID_TTL
+2. [major] 测试缺少负数 ttl 用例；修法：补 2 个参数化用例
+不要改动范围外的文件。
+```
+
+**四条纪律**：产出者不自评；verifier 不改产物（一旦允许它顺手改，它就会倾向宣布「已修复」）；融合交给 writer，别让 verifier 综合多份判决（最容易长出原文没有的结论）；能跑就别只读。
+
+**验证成本要算**：给「读一个文件」这种动作配 verifier 是净亏。连续 2 次因同一标准被退回，问题在标准或拆法，回 ② 重拆，不要原样再验。
+
 ## 与波次的配合
 
 verifier 的 `blockedBy` 指向被验任务，所以它**天然落在下一波**——不需要额外规则。合成任务的 `blockedBy` 同时包含被验任务与其 verifier，于是"验证没过就不合成"由 DAG 结构保证，而不是靠父级记性。
@@ -69,4 +86,4 @@ verifier 的 `blockedBy` 指向被验任务，所以它**天然落在下一波**
 
 交付物无法跑命令时（无 shell、无构建入口）：
 
-> 先探测一次环境（如 `pwsh -Command 'echo ok'`）。探测不通过才降级：验证改为静态核对，verifier 的 summary **必须**显式写「未执行，只能人工确认」，不得写"测试通过"。探测通过却写"未执行"同样是缺陷——该跑没跑。
+> 先探测一次环境（`bash -c 'echo ok'`；Windows 无 bash 时用 `pwsh -Command 'echo ok'`；两个都跑不通才算无 shell）。探测不通过才降级：验证改为静态核对，verifier 的 summary **必须**显式写「未执行，只能人工确认」，不得写"测试通过"。探测通过却写"未执行"同样是缺陷——该跑没跑。

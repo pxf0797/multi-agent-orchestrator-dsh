@@ -3,6 +3,7 @@
 - 评审对象：本 skill 全部 9 个文件 + `tools/selfcheck.mjs`
 - 评审方法：逐文件通读；把 SKILL.md 声明的运行时事实拿去 DSH 打包产物（`app.asar` 源码与默认配置）逐条核对；实跑 `selfcheck`；实测一次 `agent(..., {model})` 调用
 - 评审日期：2026-10-22
+- **修复状态：P1 全部 5 条、P2 全部 5 条已在 v1.3.0 修掉，详见 [CHANGELOG.md](../CHANGELOG.md)**。下文保留原始评审内容作为基线。
 
 ## 六维评分
 

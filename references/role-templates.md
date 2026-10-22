@@ -4,7 +4,7 @@
 
 上游的 9 个角色是 architect / developer / qa / researcher / writer / reviewer / **verifier** / **adversarial-verifier**[beta] / **trace-agent**[beta]。其中 `verifier` 与 `qa` 同义（已合并），另补入上游没有但 DSH 场景更常缺的 `analyst`、`devops`、`synthesizer`；`adversarial-verifier` 与 `trace` 作为进阶角色保留在文末。
 
-装配方式：把下面「身份段」粘进子任务 prompt 开头，把「验收」留给父级在汇总/验证时用。
+装配方式：把下面「身份段」粘进子任务 prompt 开头，把「验收」留给父级在汇总/验证时用。身份段之前**必须先放三句通用前置**（你看不到主对话 / 你不能派发 / 大段写文件），见 `dag-schema.md` 的 prompt 模板。
 
 ---
 

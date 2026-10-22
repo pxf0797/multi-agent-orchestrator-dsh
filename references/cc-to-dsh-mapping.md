@@ -22,7 +22,7 @@
 | 10 | **slash command** `/orchestrate`、`/swarm` | 显式入口 | **等价（名字不同）** | DSH 支持 `/name`：用户输入里一个空白分隔的 `/multi-agent-orchestrator` 会把该 skill 的完整指令**直接注入当步**（不经过模型主动加载）。限制：token 必须精确等于 skill 名，`/orchestrate` 无效；短名 `/orch` 靠一个 `disable-model-invocation` 的别名 skill 提供。另有 `/` 菜单按名字模糊匹配 |
 | 11 | `~/.claude/orchestrator/` | 唯一状态根目录 | **改写** | `<workspace>/.dsh/orchestrator/`。理由：沙箱只允许写工作区；且会话重启后工作区仍在，家目录隐式状态反而不可发现 |
 | 12 | `~/.claude/skills/<name>/references/{roles,sops}/*.md` 自动扫描（新增文件即注册） | 角色/SOP 可扩展 | **删除** | DSH skill 的 `references/` 只是被 `read` 的普通文件，无自动发现。要扩展角色就直接编辑 `role-templates.md` |
-| 13 | `~/.claude/skills/<name>/` 安装路径 | skill 本体位置 | **等价** | 优先级：`<projectRoot>/.dsh/skills/` (100) > `<projectRoot>/.agents/skills/` (200) > `~/.agents/skills/` (500) > bundled (600)。目录名必须 kebab-case，文件必须叫 `SKILL.md` |
+| 13 | `~/.claude/skills/<name>/` 安装路径 | skill 本体位置 | **等价** | 优先级（数字越小越优先）：`<projectRoot>/.dsh/skills/` (100) > `<projectRoot>/.agents/skills/` (200) > `customSkillDirs` (300) > `<dshHome>/skills/` (400) > `<agentsHome>/skills/` (500)；内置 skill 由独立 provider 提供，不在这个 rank 表里。目录名必须 kebab-case，文件必须叫 `SKILL.md` |
 | 14 | 模型枚举 `haiku/sonnet/opus/fable` | 分配算力 | **改写 ★** | 只有 `workflow` 的 `agent(prompt, {model})` 支持 per-call 覆盖；`subagent` 工具无模型参数（走会话/部署默认路由）。**这是"选 workflow 还是选并行 subagent"的关键判据之一** |
 
 ## B. 工具权限原语

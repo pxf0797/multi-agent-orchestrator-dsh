@@ -163,6 +163,27 @@ for (const f of mdFiles) {
 }
 record('文件引用', linkProblems)
 
+// ---------- 7. SKILL.md 字符预算 ----------
+const budgetProblems = []
+const skillText = read(path.join(root, 'SKILL.md'))
+const skillChars = [...skillText].length
+const BUDGET = 8192
+if (skillChars > BUDGET) {
+  budgetProblems.push(`SKILL.md 有 ${skillChars} 字符，超出预算 ${BUDGET}；超了会被标准 preset 的工具结果修剪器裁剪`)
+}
+record('字符预算', budgetProblems)
+
+// ---------- 8. 项数声明与实际一致 ----------
+// 本项自己是第 8 项：此刻 checks.length 为 7，故实际数 = checks.length + 1
+const claimProblems = []
+const actualChecks = checks.length + 1
+const claim = skillText.match(/检查\s*(\d+)\s*(?:件事|项)/)
+if (!claim) claimProblems.push('SKILL.md 里找不到「检查 N 件事」的声明')
+else if (Number(claim[1]) !== actualChecks) {
+  claimProblems.push(`SKILL.md 声明检查 ${claim[1]} 件事，实际有 ${actualChecks} 项检查`)
+}
+record('项数声明', claimProblems)
+
 // ---------- report ----------
 const width = Math.max(...checks.map((c) => c.name.length))
 for (const c of checks) console.log(`${c.ok ? 'PASS' : 'FAIL'}  ${c.name.padEnd(width)}`)

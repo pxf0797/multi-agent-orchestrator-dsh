@@ -85,6 +85,16 @@ T5 (synthesize)                     wave 3   blockedBy T2v,T3,T4
 
 ## prompt 模板
 
+**开头三句每个 prompt 都必须有**——子 agent 看不到主对话，也不会自己去翻 skill 目录：
+
+```
+你看不到主对话，本 prompt 就是全部信息；缺信息用工具查，查不到写「未确认」。
+你不能派发子 agent，也不能调用 workflow。
+大段内容写文件并给路径，回复不超过 200 字。
+```
+
+后面接：
+
 ```
 角色：<role 段，来自 role-templates.md>
 目标：<subject 的可执行版本>

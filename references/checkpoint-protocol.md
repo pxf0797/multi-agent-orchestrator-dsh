@@ -27,7 +27,7 @@
 | 字段 | 约定 |
 |---|---|
 | `schema_version` | 当前 `1`。恢复时先比对；不认识的版本先降级为只读（报告结论、不自动续跑） |
-| `orchestrator_id` / `created_at` / `updated_at` | ISO 时间戳带时区；**写之前用 `Get-Date -Format o` 取真实时间**，不要凭估算（凭估算会写出未来时间，恢复时的"取最新"就会错） |
+| `orchestrator_id` / `created_at` / `updated_at` | ISO 时间戳带时区；**写之前取真实时间**（`date -u +%Y-%m-%dT%H:%M:%S%z`；Windows 用 `Get-Date -Format o`；也可直接读 `Time sampled` 之类的运行时时间），不要凭估算（凭估算会写出未来时间，恢复时的"取最新"就会错） |
 | `scenario` | `deep_research` / `code_dev` / `deploy_verify` / `general` |
 | `goal` | 用户原话，一字不改（恢复时靠它匹配意图） |
 | `mode` | 只能是 `wave` / `workflow` / `hybrid`。场景模板给的推荐值优先于全局默认 |
@@ -106,6 +106,10 @@ checkpoint **不放**每个任务的完整 prompt（体积大且难读）。计�
 | Strict 的 3 个 verifier 有 1 个执行失败（failed） | 先按 critical 规则重派该 verifier；2 次仍 failed → Gate 2。**不要**因此自动跳过合成 |
 
 **推论**：Strict 的"≥2 通过"由合成任务读 `verdict` 自行裁决；只要 verifier 是 `done`，下游就不会因为它投了 `fail` 而被标 skipped。
+
+**三类预算不要混用**（改文档时盯住这三条，别在不同文件里给出不同数）：`returns` 修正轮次（判定不过 → 改 → 再判，上限 2）、`attempts` 同任务重试（上限 2）、整轮 workflow 重跑（上限 1）。**每次重试必须改变输入**——补上下文、缩小范围或换角色；同输入硬重试只是在重复同一个失败。
+
+**结构性失败信号**：同一波 ≥2 个任务因**同一原因**失败，不是运气差，是拆法或契约错了 → 停止扇出，回 DAG 设计重拆；重拆后仍同一原因 → Gate 2。
 
 ## 清理
 

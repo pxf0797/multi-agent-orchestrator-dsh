@@ -22,11 +22,11 @@
 
 ```js
 agent(p, { model: 'deepseek-flash' })    // 低价档：检索、抽取、格式转换、批量分类
-agent(p, { model: 'deepseek-reasoner' }) // 高价档：架构决策、冲突裁决、最终写作
+agent(p, { model: 'deepseek-v4-pro' })   // 高价档：架构决策、冲突裁决、最终写作
 ```
 
 > 只有 `workflow` 里的 `agent()` 支持 per-call 模型覆盖；`subagent` 工具没有模型参数（走会话/部署默认路由）。
-> 换部署时 model id 可能不同——第一次用之前先跑一个 `agent('Reply with exactly: ok', {model:'<id>'})` 探一下，失败会同步拒绝。
+> model id **以部署的模型目录为准**（本机：`deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro`，两个 `v4` id 实测可用）。`deepseek-reasoner` 也能被接受，但它不在目录里、是否真路由到高档未核实——别拿它当"贵模型"的保证；换部署时先用 `agent('Reply with exactly: ok', {model:'<id>'})` 探一次。
 
 ### `meta.phases` 对照表（必须与脚本里的 `phase()` 标题逐字一致）
 
@@ -79,7 +79,7 @@ const report = await agent(
   `合成最终报告。逐个读取这些文件并去重、标注冲突：${JSON.stringify(paths)}\n` +
   `写入 .dsh/orchestrator/output/${args.orchId}/final-report.md，` +
   `返回 {path, keyFindings[], openQuestions[]}。`,
-  { label: 'synthesize', phase: 'synthesis', model: 'deepseek-reasoner',
+  { label: 'synthesize', phase: 'synthesis', model: 'deepseek-v4-pro',
     schema: { type: 'object', properties: { path: { type: 'string' }, keyFindings: { type: 'array', items: { type: 'string' } }, openQuestions: { type: 'array', items: { type: 'string' } } }, required: ['path', 'keyFindings'], additionalProperties: false } },
 )
 return {
@@ -95,8 +95,13 @@ return {
 > ⚠️ 只用于**只读**审计或"生成到 output 目录"。写回源文件的批量迁移**不能**用 pipeline：每一项都会并发写同一批文件。
 
 ```js
-const files = args.files            // 父级放进 args，脚本不读盘
-if (!args.orchId || !Array.isArray(files)) throw new Error('args.orchId / args.files 缺失')
+const all = args?.files            // 父级放进 args，脚本不读盘
+if (!args?.orchId || !Array.isArray(all) || !all.length) throw new Error('args.orchId / args.files 缺失')
+// 一个批次 = 一个正式任务。分批靠 offset 游标，`next` 非空就带回去续跑
+const MAX = 10                     // 单批文件数：每文件 2 个 agent → 单次调用 20 个
+const offset = typeof args?.offset === 'number' ? args.offset : 0
+const files = all.slice(offset, offset + MAX)
+if (!files.length) throw new Error(`offset ${offset} 超出范围（共 ${all.length} 项）`)
 // 产物名必须唯一：把目录一起 slug，否则 a/index.ts 与 b/index.ts 会互相覆盖
 const slug = (f) => f.replace(/^[A-Za-z]:/, '').replace(/[\\/]+/g, '__').replace(/[^\w.-]/g, '_')
 phase('audit')
@@ -115,11 +120,22 @@ const results = await pipeline(
   },
 )
 const ok = results.filter(Boolean)
+const next = offset + files.length < all.length ? offset + files.length : null
 return {
-  tasks: files.map((f, i) => ({ id: `T${i + 2}`, status: results[i] ? 'done' : 'failed', output: `.dsh/orchestrator/output/${args.orchId}/${slug(f)}.audit.md`, summary: results[i], error: results[i] ? null : 'pipeline item failed' })),
-  counted: { files: files.length, audited: ok.length },
+  // 只回一条聚合任务：逐项明细在 output 目录里，**不要**给每个文件造一个任务 id
+  tasks: [{
+    id: args.taskId ?? 'T2',
+    status: ok.length ? 'done' : 'failed',
+    output: `.dsh/orchestrator/output/${args.orchId}/`,
+    summary: `审计 ${ok.length}/${files.length} 项（累计 ${offset + files.length}/${all.length}）`,
+    error: ok.length ? null : 'pipeline item failed',
+  }],
+  counted: { total: all.length, processed: files.length, audited: ok.length },
+  next,                            // 非 null → 父级用 args.offset=next 再调一次
 }
 ```
+
+**要点**：批次边界就是 checkpoint 任务边界——一次调用回一条 `tasks[]`。否则 50 个文件会变成 50 个任务，既违反 3-10 任务上限，也会让 `id` 与 plan 对不上号。`next` 非空就续跑下一批，别一次塞进全部文件。
 
 ## R3 · 对抗式验证（结论可信度）
 
@@ -141,7 +157,7 @@ return await agent(
   `裁决以下攻击是否成立。每条给出：成立/不成立 + 理由。可用全文：` +
   `${JSON.stringify(angles.map((_, i) => `.dsh/orchestrator/output/${args.orchId}/attack-${i}.md`))}\n` +
   `攻击摘要：${JSON.stringify(attacks.filter(Boolean))}`,
-  { label: 'judge', phase: 'judge', model: 'deepseek-reasoner',
+  { label: 'judge', phase: 'judge', model: 'deepseek-v4-pro',
     schema: { type: 'object', properties: { verdict: { type: 'string' }, confidence: { type: 'number' }, reasons: { type: 'array', items: { type: 'string' } } }, required: ['verdict', 'confidence'], additionalProperties: false } },
 )
 ```
@@ -154,14 +170,14 @@ return await agent(
 phase('analyze')
 const out = `.dsh/orchestrator/output/${args.orchId}`
 const [arch, tests] = await parallel([
-  () => agent(`读代码并给出改动方案（不改代码），写到 ${out}/plan.md，回 ≤8 行摘要。`, { label: 'arch', phase: 'analyze', model: 'deepseek-reasoner' }),
+  () => agent(`读代码并给出改动方案（不改代码），写到 ${out}/plan.md，回 ≤8 行摘要。`, { label: 'arch', phase: 'analyze', model: 'deepseek-v4-pro' }),
   () => agent(`找出覆盖该模块的现有测试与缺口，写到 ${out}/test-gaps.md，回 ≤8 行摘要。`, { label: 'tests', phase: 'analyze', model: 'deepseek-flash' }),
 ])
 if (!arch || !tests) return { tasks: [{ id: 'T2', status: 'failed', error: '分析阶段缺失' }], aborted: '分析阶段缺失' }
 
 phase('implement')
 const impl = await agent(`按 ${out}/plan.md 与 ${out}/test-gaps.md 实施改动，逐文件写盘；把改动文件清单写到 ${out}/changed-files.json（{"files":[...]}）；跑测试。回 ≤8 行：changedFiles、testResult。`,
-  { label: 'implement', phase: 'implement', model: 'deepseek-reasoner' })
+  { label: 'implement', phase: 'implement', model: 'deepseek-v4-pro' })
 if (!impl) return { tasks: [{ id: 'T3', status: 'failed', error: '实现阶段无返回' }], aborted: '实现阶段无返回' }
 
 phase('verify')
