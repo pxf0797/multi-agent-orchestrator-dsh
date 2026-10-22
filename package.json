@@ -1,6 +1,6 @@
 {
   "name": "multi-agent-orchestrator-dsh",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "description": "DSH-native multi-agent orchestration skill: DAG task graph, wave dispatch, checkpoint resume",
   "license": "MIT",

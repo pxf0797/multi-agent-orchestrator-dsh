@@ -28,6 +28,9 @@
 | `completion_criteria` | 一句可检验的条件 | `standard` 及以上必填 |
 | `dispatch` | `subagent` / `workflow` / `inline` | 见下表 |
 | `output` | `.dsh/orchestrator/output/<orchId>/<file>.md`（工作区相对路径） | 子 agent 必须写到这里；代码类任务可指向目录，并用 `artifacts: []` 列出改动的源文件（完整 prompt 放 `.dsh/orchestrator/plans/<orchId>.md`，不进 checkpoint） |
+| `previous_outputs` | 路径数组 | `returns > 0` 必填：被 verifier 否掉的那几版，别覆盖 |
+| `counted` | `{total, pass, fail, unverifiable}` | 审计/核对类任务；三档相加必须等于 `total` |
+| `issue_counts` | `{blocker, major, minor}` | 仅 verifier；配 `pass_with_issues` 用 |
 
 ## dispatch 选择
 
@@ -80,6 +83,7 @@ T5 (synthesize)                     wave 3   blockedBy T2v,T3,T4
 2. 只返回 ≤8 行：结论要点（≤5 条）、文件路径、关键来源（≥1 条，URL / 文件:行号）、未确认项（没有写 none）。
 ```
 
+- 摘要只放**口径 + 一句结论 + 路径**，不复述正文——27 KB 的核对表塞进 8 行只丢信息。
 - 这条契约适用于 `subagent` 与自己写 `inline` 的产物。
 - `workflow` 脚本内部的 `agent()` 返回值留在脚本里，**不需要 ≤8 行**——但它们落盘的规则一样，脚本 `return` 给父级的必须是结构化索引，不是正文。
 

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "orchestrator_id": "orch-20261020-165324-482",
   "created_at": "2026-10-20T16:53:24+08:00",
   "updated_at": "2026-10-20T17:02:11+08:00",
@@ -9,10 +9,19 @@
   "status": "running",
   "plan": ".dsh/orchestrator/plans/orch-20261020-165324-482.md",
   "waves": {
-    "0": ["T1"],
-    "1": ["T2", "T3"],
-    "2": ["T2v"],
-    "3": ["T5"]
+    "0": [
+      "T1"
+    ],
+    "1": [
+      "T2",
+      "T3"
+    ],
+    "2": [
+      "T2v"
+    ],
+    "3": [
+      "T5"
+    ]
   },
   "tasks": [
     {
@@ -37,7 +46,9 @@
       "id": "T2",
       "subject": "维度 A 分析",
       "role": "analyst",
-      "blockedBy": ["T1"],
+      "blockedBy": [
+        "T1"
+      ],
       "criticality": "normal",
       "status": "pending",
       "verify": "standard",
@@ -55,7 +66,9 @@
       "id": "T3",
       "subject": "反面证据检索",
       "role": "adversarial-verifier",
-      "blockedBy": ["T1"],
+      "blockedBy": [
+        "T1"
+      ],
       "criticality": "normal",
       "status": "pending",
       "verify": "light",
@@ -73,7 +86,9 @@
       "id": "T2v",
       "subject": "验证 T2（Standard）",
       "role": "reviewer",
-      "blockedBy": ["T2"],
+      "blockedBy": [
+        "T2"
+      ],
       "criticality": "critical",
       "status": "pending",
       "verify": "light",
@@ -85,13 +100,21 @@
       "ref": null,
       "output": ".dsh/orchestrator/output/orch-20261020-165324-482/verify-T2.md",
       "summary": null,
-      "error": null
+      "error": null,
+      "issue_counts": {
+        "blocker": 0,
+        "major": 0,
+        "minor": 0
+      }
     },
     {
       "id": "T5",
       "subject": "汇总成最终报告",
       "role": "synthesizer",
-      "blockedBy": ["T2v", "T3"],
+      "blockedBy": [
+        "T2v",
+        "T3"
+      ],
       "criticality": "critical",
       "status": "pending",
       "verify": "light",

@@ -38,6 +38,7 @@
 | 情形 | `status` | `verdict` | 下游 |
 |---|---|---|---|
 | verifier 正常完成且判定通过 | `done` | `pass` | 可以继续 |
+| 通过但仍有 blocker/major | `done` | `pass_with_issues` | 不返工；但合成必须把这些问题逐条写进终稿的「已知偏差」段 |
 | verifier 正常完成但判定不通过 | `done` | `fail` | **不触发失败传播**；被验任务 `returns += 1`，父级决定重做还是升级 |
 | verifier 没跑起来 / 没落盘 | `failed` | `null` | 按 critical 规则重派；2 次仍 failed → Gate 2 |
 | 被放弃 | `skipped` | `null` | 触发下游 `upstream failed` |
@@ -65,7 +66,11 @@ Standard 及以上**必填** `completion_criteria`（一句话可检验的通过
 
 verifier 的判决固定为 `{pass, score, issues[], summary}`，`issues[]` 每条 `{severity, where, problem, fix}`，`severity` 只取 `critical|major|minor`。`workflow` 里用 `agent(..., {schema})` 让引擎校验；`subagent` 任务则把同样的 JSON 写进 `output`。
 
+判定结果要落进 checkpoint 的两个数字：`verdict` 与本任务的 `issue_counts`（`{blocker, major, minor}`）。`verifier` 判 `pass` 却带着 major，就得标 `pass_with_issues`——否则合成方只看 verdict，会把已知问题当成没有问题。
+
 **退回必须把 issues 原文回灌给产出者，不要二次概括**：
+
+退修时产物**另起文件名**（`<id>-claims-r2.md`），旧版压进 `previous_outputs`；同一路径覆盖会让"被否掉的那一版"永久消失，裁决时拿不出证据。
 
 ```
 上一轮验收未通过，逐条修完再交付：

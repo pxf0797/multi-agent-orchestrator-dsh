@@ -117,6 +117,82 @@ test('完整 workspace（终稿 + 全部产物齐）→ 通过', () => {
   assert.match(r.out, /0 个错误/)
 })
 
+test('counted 不守恒 → 报错（schema 2）', () => {
+  const cp = clone()
+  cp.tasks.find((t) => t.id === 'T2').counted = { total: 35, pass: 31, fail: 2, unverifiable: 1 }
+  const r = run([writeCp('counted.json', cp), '--no-files'])
+  assert.equal(r.code, 1)
+  assert.match(r.out, /counted 不守恒/)
+})
+
+test('counted 与 summary 数字不一致 → 报错', () => {
+  const cp = clone()
+  const t = cp.tasks.find((x) => x.id === 'T2')
+  t.counted = { total: 35, pass: 31, fail: 2, unverifiable: 2 }
+  t.summary = '35 条：成立 32 / 不成立 2 / 无法核验 1'
+  const r = run([writeCp('counted-summary.json', cp), '--no-files'])
+  assert.equal(r.code, 1)
+  assert.match(r.out, /两处必须一致/)
+})
+
+test('returns>0 但没留 previous_outputs → 报错（schema 2）', () => {
+  const cp = clone()
+  cp.tasks.find((t) => t.id === 'T2').returns = 1
+  const r = run([writeCp('no-prev.json', cp), '--no-files'])
+  assert.equal(r.code, 1)
+  assert.match(r.out, /previous_outputs/)
+})
+
+test('verifier 判 fail 但被验任务没返工 → 报错（schema 2）', () => {
+  const cp = clone()
+  cp.tasks.find((t) => t.id === 'T2v').verdict = 'fail'
+  const r = run([writeCp('fail-no-rework.json', cp), '--no-files'])
+  assert.equal(r.code, 1)
+  assert.match(r.out, /returns=0/)
+})
+
+test('verdict=pass 但 issue_counts 有 major → 警告（应标 pass_with_issues）', () => {
+  const cp = clone()
+  const v = cp.tasks.find((t) => t.id === 'T2v')
+  v.verdict = 'pass'
+  v.issue_counts = { blocker: 0, major: 2, minor: 1 }
+  const r = run([writeCp('pass-with-major.json', cp), '--no-files'])
+  assert.equal(r.code, 0, r.out)
+  assert.match(r.out, /pass_with_issues/)
+})
+
+test('--fix-waves 把过期的 waves 写回文件', () => {
+  const cp = clone()
+  cp.waves = { 0: ['T1'], 1: ['T2', 'T3', 'T2v'], 2: ['T5'] }
+  const file = writeCp('fix-waves.json', cp)
+  const r = run([file, '--no-files', '--fix-waves'])
+  assert.equal(r.code, 0, r.out)
+  assert.match(r.out, /FIXED/)
+  const after = JSON.parse(fs.readFileSync(file, 'utf8'))
+  const w = Object.fromEntries(Object.entries(after.waves).map(([k, v]) => [k, [...v].sort()]))
+  assert.deepEqual(w, { 0: ['T1'], 1: ['T2', 'T3'], 2: ['T2v'], 3: ['T5'] })
+})
+
+test('终稿缺「依据」段落 → 警告', () => {
+  const ws = path.join(tmp, 'ws-report')
+  const outDir = path.join(ws, '.dsh/orchestrator/output', ORCH)
+  fs.mkdirSync(outDir, { recursive: true })
+  fs.mkdirSync(path.join(ws, '.dsh/orchestrator/plans'), { recursive: true })
+  fs.writeFileSync(path.join(ws, '.dsh/orchestrator/plans', `${ORCH}.md`), '# plan\n')
+  const cp = clone()
+  cp.status = 'done'
+  cp.goal = '一次真实的编排'
+  for (const t of cp.tasks) {
+    t.status = 'done'
+    t.attempts = 1
+    t.summary = '结论'
+    fs.writeFileSync(path.join(ws, t.output), t.id === 'T5' ? '# 终稿\n\n只有结论。\n' : 'ok\n')
+  }
+  const r = run([writeCp('report.json', cp), '--root', ws])
+  assert.equal(r.code, 0, r.out)
+  assert.match(r.out, /缺少「依据」/)
+})
+
 test('缺文件路径或参数 → exit 2', () => {
   const r = run([])
   assert.equal(r.code, 2)

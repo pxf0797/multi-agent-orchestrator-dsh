@@ -17,12 +17,13 @@ const here = path.dirname(fileURLToPath(import.meta.url))
 const skillRoot = path.resolve(here, '..')
 
 // ---------- CLI ----------
-const opts = { file: null, root: process.cwd(), files: true, json: false }
+const opts = { file: null, root: null, rootExplicit: false, files: true, json: false, fixWaves: false }
 const argv = process.argv.slice(2)
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]
-  if (a === '--root') opts.root = path.resolve(argv[++i] ?? '.')
+  if (a === '--root') { opts.root = path.resolve(argv[++i] ?? '.'); opts.rootExplicit = true }
   else if (a === '--no-files') opts.files = false
+  else if (a === '--fix-waves') opts.fixWaves = true
   else if (a === '--json') opts.json = true
   else if (a === '-h' || a === '--help') { usage(); process.exit(0) }
   else if (a.startsWith('-')) { console.error(`未知参数: ${a}`); usage(); process.exit(2) }
@@ -31,11 +32,20 @@ for (let i = 0; i < argv.length; i++) {
 }
 if (!opts.file) { usage(); process.exit(2) }
 
+// --root 没给就按 checkpoint 的位置反推工作区（.../.dsh/orchestrator/checkpoints/x.json）
+if (!opts.rootExplicit) {
+  const abs = path.resolve(opts.file)
+  const marker = `${path.sep}.dsh${path.sep}orchestrator${path.sep}checkpoints${path.sep}`
+  const i = abs.lastIndexOf(marker)
+  opts.root = i > 0 ? abs.slice(0, i) : process.cwd()
+}
+
 function usage() {
   console.error(`用法: node tools/validate-checkpoint.mjs <checkpoint.json> [--root <workspace>] [--no-files] [--json]
 
-  --root <dir>   工作区根目录（默认当前目录）。output / plan 的存在性按它解析。
+  --root <dir>   工作区根目录。默认从 checkpoint 路径反推（.../.dsh/orchestrator/checkpoints/x.json），推不出才用当前目录。
   --no-files     跳过文件存在性校验（用于校验尚未产生产物的模板）。
+  --fix-waves    把按 blockedBy 重算出的 waves 直接写回文件（其余校验照跑）。
   --json         以 JSON 输出结果。`)
 }
 
@@ -52,7 +62,7 @@ const TASK_STATUS = new Set(['pending', 'running', 'done', 'failed', 'skipped'])
 const VERIFY = new Set(['light', 'standard', 'strict', 'tournament', 'adversarial'])
 const DISPATCH = new Set(['subagent', 'workflow', 'inline'])
 const CRITICALITY = new Set(['critical', 'normal', 'nice-to-have'])
-const VERDICT = new Set(['pass', 'fail'])
+const VERDICT = new Set(['pass', 'fail', 'pass_with_issues'])
 const GATE_AT = new Set(['before_dispatch', 'blocked', 'before_delivery'])
 const PLAN_PREFIX = '.dsh/orchestrator/plans/'
 const OUTPUT_PREFIX = '.dsh/orchestrator/output/'
@@ -86,11 +96,19 @@ const isStr = (v) => typeof v === 'string' && v.trim() !== ''
 const isInt = (v) => Number.isInteger(v)
 const ts = (v) => isStr(v) && ISO_TZ.test(v) && !Number.isNaN(Date.parse(v))
 
+const V2 = cp.schema_version === 2
+// schema 1 的老编排没有新字段，这些规则降级为警告；schema 2 起按错误处理
+const rule = (code, msg) => (V2 ? E(code, msg) : W(code, msg))
+
 // ---------- 1. 顶层字段 ----------
 const required = ['schema_version', 'orchestrator_id', 'created_at', 'updated_at', 'scenario', 'goal', 'mode', 'status', 'plan', 'waves', 'tasks']
 for (const k of required) if (!(k in cp)) E('top.missing', `缺字段 ${k}`)
 
-if (cp.schema_version !== 1) E('schema_version', `不认识的 schema_version: ${JSON.stringify(cp.schema_version)}（当前只支持 1；不认识的版本应只读，不自动续跑）`)
+if (![1, 2].includes(cp.schema_version)) {
+  E('schema_version', `不认识的 schema_version: ${JSON.stringify(cp.schema_version)}（支持 1 / 2；不认识的版本应只读，不自动续跑）`)
+} else if (cp.schema_version === 1) {
+  W('schema_version', 'schema_version=1：counted / previous_outputs / pass_with_issues 只按警告处理；新建编排请用 2')
+}
 
 const orchId = cp.orchestrator_id
 if (!isStr(orchId) || !ORCH_ID.test(orchId)) E('orchestrator_id', `orchestrator_id 应形如 orch-YYYYMMDD-HHMMSS-<3位>，实际 ${JSON.stringify(orchId)}`)
@@ -157,6 +175,58 @@ for (const t of byId.values()) {
   if (t.dispatch === 'inline' && t.ref) W('task.ref', `${at} 是 inline 任务，ref 应为 null`)
   if (t.dispatch === 'subagent' && t.status === 'done' && !isStr(t.ref)) W('task.ref', `${at} 是 subagent 任务且已 done，但缺 ref（agent id）`)
 
+  // counted：三档数字必须守恒，且与 summary 写的一致
+  if (t.counted !== undefined) {
+    const c = t.counted
+    if (!c || typeof c !== 'object' || Array.isArray(c)) E('task.counted', `${at} 的 counted 必须是对象`)
+    else {
+      const okShape = ['total', 'pass', 'fail', 'unverifiable'].every((k) => isInt(c[k]) && c[k] >= 0)
+      if (!okShape) E('task.counted', `${at} 的 counted 需要非负整数 total / pass / fail / unverifiable`)
+      else if (c.pass + c.fail + c.unverifiable !== c.total) {
+        rule('task.counted', `${at} 的 counted 不守恒：${c.pass}+${c.fail}+${c.unverifiable}=${c.pass + c.fail + c.unverifiable} ≠ total ${c.total}`)
+      }
+      const m = isStr(t.summary) ? t.summary.match(/成立\s*(\d+)\s*[/／]\s*不成立\s*(\d+)\s*[/／]\s*无法核验\s*(\d+)/) : null
+      if (m && okShape) {
+        const p = Number(m[1]), f = Number(m[2]), u = Number(m[3])
+        if (p !== c.pass || f !== c.fail || u !== c.unverifiable) {
+          E('task.counted', `${at} 的 summary 写 ${p}/${f}/${u}，counted 写 ${c.pass}/${c.fail}/${c.unverifiable}——两处必须一致`)
+        }
+      }
+    }
+  } else if (isStr(t.summary) && /成立\s*\d+\s*[/／]\s*不成立/.test(t.summary)) {
+    W('task.counted', `${at} 的 summary 里有三档数字，建议加 counted 字段让 validator 校验守恒`)
+  }
+
+  // issue_counts：verifier 的问题分布
+  if (t.issue_counts !== undefined) {
+    const ic = t.issue_counts
+    if (!ic || typeof ic !== 'object' || Array.isArray(ic)) E('task.issue_counts', `${at} 的 issue_counts 必须是对象`)
+    else {
+      let sum = 0
+      for (const k of ['blocker', 'major', 'minor']) {
+        if (!isInt(ic[k]) || ic[k] < 0) E('task.issue_counts', `${at} 的 issue_counts.${k} 必须是非负整数`)
+        else sum += ic[k]
+      }
+      if (sum === 0 && t.verdict && t.verdict !== 'pass') W('task.issue_counts', `${at} 判了 ${t.verdict} 却没有任何 issue`)
+    }
+  }
+
+  // previous_outputs：被否掉的那一版必须留痕
+  if (t.previous_outputs !== undefined) {
+    if (!Array.isArray(t.previous_outputs)) E('task.previous_outputs', `${at} 的 previous_outputs 必须是数组`)
+    else {
+      for (const prev of t.previous_outputs) {
+        if (!isStr(prev)) E('task.previous_outputs', `${at} 的 previous_outputs 含非字符串项`)
+        else if (!prev.startsWith(`${OUTPUT_PREFIX}${orchId}/`)) E('task.previous_outputs', `${at} 的 previous_outputs 必须以 ${OUTPUT_PREFIX}${orchId}/ 开头：${prev}`)
+        else if (prev === t.output) E('task.previous_outputs', `${at} 的 output 不能同时出现在 previous_outputs 里`)
+      }
+      if (!t.returns) W('task.previous_outputs', `${at} 有 previous_outputs 但 returns=0`)
+    }
+  }
+  if (isInt(t.returns) && t.returns > 0 && (!Array.isArray(t.previous_outputs) || t.previous_outputs.length === 0)) {
+    rule('task.previous_outputs', `${at} 的 returns=${t.returns}，但没有 previous_outputs——被 verifier 否掉的那一版没留痕`)
+  }
+
   if (!isStr(t.output)) E('task.output', `${at} 缺 output`)
   else if (!t.output.startsWith(`${OUTPUT_PREFIX}${orchId}/`)) {
     E('task.output', `${at} 的 output 必须以 ${OUTPUT_PREFIX}${orchId}/ 开头，实际 ${t.output}`)
@@ -169,6 +239,25 @@ for (const t of byId.values()) {
     else if (b === t.id) E('task.blockedBy', `${at} 依赖了自己`)
     else if (order.get(b) >= order.get(t.id)) E('task.blockedBy', `${at} 依赖了不早于它的任务 ${b}（协议要求只能指向更早的任务）`)
   }
+}
+
+// ---------- 2b. 判定失败必须真的走返工 ----------
+for (const t of byId.values()) {
+  if (!VERIFIER_ID.test(t.id) || t.verdict !== 'fail') continue
+  const target = byId.get(t.id.replace(/v\d*$/, ''))
+  if (target && isInt(target.returns) && target.returns < 1) {
+    rule('state', `${t.id} 判 fail，但被验任务 ${target.id} 的 returns=0（没走返工）`)
+  }
+  if (target && target.status === 'done' && !(target.previous_outputs ?? []).length) {
+    W('state', `${t.id} 判 fail 且 ${target.id} 已返工完成，但没有任何 previous_outputs 可追溯`)
+  }
+}
+// pass 与 issue 计数要自洽
+for (const t of byId.values()) {
+  if (!VERIFIER_ID.test(t.id) || !t.issue_counts) continue
+  const bad = (t.issue_counts.blocker ?? 0) + (t.issue_counts.major ?? 0)
+  if (t.verdict === 'pass' && bad > 0) W('state', `${t.id} 判 pass 但有 ${bad} 条 blocker/major——应标 pass_with_issues 并在终稿「已知偏差」里列出`)
+  if (t.verdict === 'pass_with_issues' && bad === 0) W('state', `${t.id} 标了 pass_with_issues 却没有 blocker/major`)
 }
 
 // ---------- 3. waves 重算 ----------
@@ -195,6 +284,7 @@ const normalizeWaves = (o) => Object.keys(o ?? {})
   .sort((a, b) => Number(a) - Number(b))
   .map((k) => [k, [...o[k]].sort()])
 
+let wavesFixed = false
 if (!cp.waves || typeof cp.waves !== 'object' || Array.isArray(cp.waves)) {
   E('waves', 'waves 必须是 { "0": [id...] } 形式的对象')
 } else {
@@ -205,7 +295,13 @@ if (!cp.waves || typeof cp.waves !== 'object' || Array.isArray(cp.waves)) {
   const a = JSON.stringify(normalizeWaves(cp.waves))
   const b = JSON.stringify(normalizeWaves(expected))
   if (a !== b) {
-    E('waves', `waves 与 blockedBy 推出的结果不一致（派生字段应在每次写盘时重算并整字段覆盖）\n    期望 ${b}\n    实际 ${a}`)
+    if (opts.fixWaves) {
+      cp.waves = expected
+      fs.writeFileSync(opts.file, JSON.stringify(cp, null, 2) + '\n')
+      wavesFixed = true
+    } else {
+      E('waves', `waves 与 blockedBy 推出的结果不一致（派生字段应在每次写盘时重算并整字段覆盖；可加 --fix-waves 自动回写）\n    期望 ${b}\n    实际 ${a}`)
+    }
   }
   const listed = Object.values(cp.waves).flat()
   for (const id of byId.keys()) if (!listed.includes(id)) E('waves', `任务 ${id} 没有出现在 waves 里`)
@@ -298,12 +394,22 @@ if (opts.files) {
   }
 }
 
+// ---------- 8. 终稿段落 ----------
+if (opts.files && cp.status === 'done' && isStr(orchId)) {
+  const fr = path.join(opts.root, OUTPUT_PREFIX, orchId, 'final-report.md')
+  if (fs.existsSync(fr)) {
+    const txt = fs.readFileSync(fr, 'utf8')
+    for (const kw of ['未确认', '依据']) if (!txt.includes(kw)) W('report', `终稿缺少「${kw}」段落`)
+  }
+}
+
 // ---------- 输出 ----------
-const result = { file: opts.file, root: opts.root, errors, warnings, ok: errors.length === 0 }
+const result = { file: opts.file, root: opts.root, wavesFixed, errors, warnings, ok: errors.length === 0 }
 if (opts.json) {
   console.log(JSON.stringify(result, null, 2))
 } else {
   const base = path.basename(opts.file)
+  if (wavesFixed) console.log(`FIXED ${base}：waves 已按 blockedBy 重算并写回`)
   if (errors.length === 0 && warnings.length === 0) {
     console.log(`PASS  ${base}：结构与状态一致（${byId.size} 个任务）`)
   } else {

@@ -125,7 +125,14 @@ node tools/validate-checkpoint.mjs .dsh/orchestrator/checkpoints/<orchId>.json
 
 `selfcheck` 查 8 项：waves 公式、`plan`/`output` 路径基准、枚举闭合、任务数与角色池、verifier 展开、文件引用、SKILL.md 字符预算、以及文档里声明的项数是否与实际一致。
 
-`validate-checkpoint` 查的是真实状态：waves 能否从 `blockedBy` 重算、done 任务的产物是否真存在（空文件也算错）、`standard`/`strict` 的 verifier 是否真的展开且 `blockedBy` 指回被验任务、失败是否按协议传播、`attempts`/`summary`/`verdict` 是否自洽。
+`validate-checkpoint` 查的是真实状态：waves 能否从 `blockedBy` 重算、done 任务的产物是否真存在（空文件也算错）、`standard`/`strict` 的 verifier 是否真的展开且 `blockedBy` 指回被验任务、失败是否按协议传播、`attempts`/`summary`/`verdict` 是否自洽。它还管四件"只有跑过才知道会漏"的事：
+
+- `counted` 三档必须守恒（`pass + fail + unverifiable = total`），且与 `summary` 里的数字一致
+- `returns > 0` 必须有 `previous_outputs`——被 verifier 否掉的那一版不能覆盖丢失
+- `verdict = fail` 必须真的触发返工（被验任务的 `returns ≥ 1`）
+- `verdict = pass` 但带着 blocker/major 时，提示改标 `pass_with_issues`
+
+`--fix-waves` 可以直接把重算结果写回文件，省掉手工改 JSON。`schema_version: 1` 的老编排只告警、不判错；新建编排请用 `2`。
 
 | 退出码 | 含义 |
 |---|---|
@@ -133,7 +140,7 @@ node tools/validate-checkpoint.mjs .dsh/orchestrator/checkpoints/<orchId>.json
 | `1` | 有错误，逐条列出 |
 | `2` | 用法错误 / JSON 解析失败 |
 
-选项：`--root <workspace>` 指定工作区根（默认当前目录）、`--no-files` 跳过文件存在性、`--json` 输出机器可读结果。
+选项：`--root <workspace>` 指定工作区根（**默认从 checkpoint 路径反推**，推不出才用当前目录）、`--no-files` 跳过文件存在性、`--fix-waves` 回写 waves、`--json` 输出机器可读结果。
 
 ## 已在运行时核实的事实
 

@@ -4,7 +4,7 @@ description: "多 Agent 编排：把复杂目标拆成 DAG 任务图，用并行
 whenToUse: "目标可拆成 >=3 个相互独立或分层的子任务，且用户期待一个汇总结果时；或用户明确说「并行/同时/多个 agent/swarm/工作流」；或上次编排中断、用户说继续。"
 user-invocable: true
 metadata:
-  version: 1.4.0
+  version: 1.5.0
 ---
 
 # Multi-Agent Orchestrator（DSH 版）
@@ -41,8 +41,7 @@ metadata:
 **门禁 A：要不要编排？**
 - 子任务 ≥3、彼此**不共享上下文**、可并行或分层 → 编排。
 - 只有 1-2 件 → 直接做或一次 `subagent`，**不要**启动编排。
-- 子任务共享同一份上下文、一个 agent 顺序读一遍就能完成 → 直接做。
-- 任务本质是串行的一条线（改一个函数、答一个问题）→ 直接做。
+- 共享同一份上下文、或本质串行（改一个函数、答一个问题）→ 直接做。
 
 > **跨文件一致性是例外**：如果判据是"多份文件之间是否自洽"，独立评审的价值来自**视角差异**（一致性 / 可执行性 / 反例），不来自并行读同一批文件。此时要么 1 个 agent 顺序审（默认），要么最多 3 个视角**不同**的评审——不要拆成 5 个都读同一批文件的 agent。
 
@@ -77,13 +76,13 @@ metadata:
 按 `references/dag-schema.md` 产出任务表。硬性要求：
 - **3-10 个任务（含 verifier）**。超过 10 说明层次不够：先合并同构分支或加一层汇总。
 - `blockedBy` 只能指向更早的任务、无环；**没有软依赖/合流**。
-- 每个任务有 `role`（必须在角色池内）、`completion_criteria`（standard 及以上必填）、`output` 路径。
+- 每个任务有 `role`（在角色池内）、`completion_criteria`（standard+ 必填）、`output` 路径。
 - 给任务标 `verify` 后，**必须同时展开出 verifier 任务**（见 `references/verification-levels.md`）。
 
 ### ③ 落盘计划
 1. 生成 `orchId`（`orch-YYYYMMDD-HHMMSS-<3位随机>`）。
 2. 每个任务的**完整 prompt** 写进 `.dsh/orchestrator/plans/<orchId>.md`（一节一个任务）。
-3. 一次性写 `.dsh/orchestrator/checkpoints/<orchId>.json`：`schema_version: 1`、`status: running`、`plan` 指向 plan 文件（**工作区相对路径**）。
+3. 一次性写 `.dsh/orchestrator/checkpoints/<orchId>.json`：`schema_version: 2`、`status: running`、`plan` 指向 plan 文件（**工作区相对路径**）。
 4. 用 `todo_write` 建**面向用户**的进度清单（一任务一条），每波结束更新一次。
 
 ### ④ 波次派发
@@ -96,7 +95,7 @@ metadata:
 - 汇总默认 `inline`（自己写），**不得再派一层 agent**；例外是它本来就是某个 workflow 的末级 agent。
 - **必须 `read` 关键产物的结论段**：只读 8 行 `summary` 拼出来的报告没有信息量，`summary` 只用来筛选排序。
 - 冲突裁决：一手来源 > 官方文档 > 二手报道 > 聚合站；质量相当比数量，数量相当比新近；都比不出 → `ask_user_question`。
-- 口径：每个 verifier 的 `verdict` 与它标注的最高严重度问题必须进终稿证据段；其余按 `summary` 排序取前 3 深读。
+- 口径：每个 verifier 的 `verdict` 与最高严重度问题必须进终稿证据段；`pass_with_issues` 的 blocker/major 单列「已知偏差」；其余按 `summary` 排序取前 3 深读。终稿末尾列「依据清单」。
 - 终稿写 `.dsh/orchestrator/output/<orchId>/final-report.md`（结论 + 证据 + 未确认项 + 下一步）；有实体交付用 `present`，否则在回复里给结论和文件链接。
 
 ---
@@ -125,19 +124,19 @@ metadata:
 
 派发前对齐运行时事实（换部署要重测）：`maxParallelToolCalls`=10，超了排队、不失败；workflow 的 `maxConcurrentAgents`=0（按 CPU 解析）、`maxTotalAgents`=1000、`maxItemsPerCall`=4096——**后两个是脚本级 fatal**，超了整段重来。`agent()` 失败**不是** fatal，它返回 `null`，由脚本自己处理。
 
-**触到就停手**：预计 >10 个 agent → 先给用户「简化版 / 完整版」两个选项；单次 workflow >20 个 → 拆多次调用、中间落盘；实际耗时超预估 3 倍 → 后台 `job_kill`、前台等返回后停止后续派发并报告已完成部分。
+**触到就停手**：预计 >10 个 agent 先给「简化版 / 完整版」；单次 workflow >20 个拆批；耗时超预估 3 倍就停（后台 `job_kill`，前台等返回后停止派发并报告）。
 
 ---
 
 ## 4. 输出契约
 
-每个子 agent 的 prompt 都要带：**正文写进 `<output>`，只回 ≤8 行摘要 + 路径 + 来源 + 未确认项**。`workflow` 里的 `agent()` 不受行数限制（结果只回脚本），落盘规则一样。模板见 `references/dag-schema.md`。
+每个子 agent 的 prompt 都要带：**正文写进 `<output>`，只回 ≤8 行摘要 + 路径 + 来源 + 未确认项**；摘要只放口径与结论，不复述正文。`workflow` 里的 `agent()` 不受行数限制，落盘规则一样。模板见 `references/dag-schema.md`。
 
 ---
 
 ## 5. 断点续跑
 
-状态唯一真源是 `.dsh/orchestrator/checkpoints/<orchId>.json`。**已 done 的任务不重派**（唯一例外：产物真的丢了，且必须在报告里说明「产物丢失，重新执行」）。
+状态唯一真源是 `.dsh/orchestrator/checkpoints/<orchId>.json`。**已 done 的任务不重派**（唯一例外：产物真的丢了，且报告里要写「产物丢失，重新执行」）。
 
 恢复顺序：按 `goal` 匹配 checkpoint（多候选列给用户选，别默认取最新）→ 校验 `schema_version` → 校验 done 的 `output` 还在 → `running` 降级 `pending` → 重算波次 → 重建 `todo_write`。
 
@@ -147,7 +146,7 @@ metadata:
 
 ## 6. HITL：三个必停点
 
-用 `ask_user_question` 停下，不要用自然语言问「你看行吗」——容易漏。`at` 只取下表第一列。
+用 `ask_user_question` 停下，不要自然语言问「你看行吗」——容易漏；`at` 只取第一列。
 
 | `at` | Gate | 触发条件 | 问什么 |
 |---|---|---|---|
@@ -167,6 +166,7 @@ metadata:
 - `blockedBy` 里有 `failed`/`skipped` → 本任务 `skipped`（`error="upstream failed"`），不派发。
 - **同一波 ≥2 个任务因同一原因失败** → 不是运气差，是拆法或契约错了：停止扇出，回 ② 重拆。
 - **每次重试必须改变输入**（补上下文 / 缩小范围 / 换角色），同输入硬重试只是把同一个失败再买一遍。
+- **返工回到原 agent**（`send_message` + issues 原文），`attempts += 1`、`ref` 不变；旧产物改名压进 `previous_outputs`，改完回原 verifier 复审。
 - 相邻两波都 0 进展 → 停止编排并报告卡点；单波全灭不停止，按上面逐任务处理。
 - 整轮 workflow 重跑上限 **1 次**，到顶换拆法或缩范围。
 
@@ -187,9 +187,7 @@ metadata:
 
 ## 8. 与上游 Claude Code 版的差异
 
-上游的循环压在三根柱子上：后台完成通知驱动 turn、Task 实体与 JSON 双写、PID 判活。DSH 一根都没有，所以这是**重写协议**而不是改名：波次替代事件循环、checkpoint 替代 Task 实体、状态字段替代进程判活。
-
-两条最常踩的：`subagent` 没有 model 参数；Agent Teams 式的子 agent 互聊没有工具入口，跨子通信只能由父级转述。完整 39 项见 `references/cc-to-dsh-mapping.md`。
+上游压在三根柱子上（通知驱动 turn / Task 双写 / PID 判活），DSH 都没有，所以是**重写而非移植**：波次替代事件循环、checkpoint 替代 Task、状态字段替代判活。最常踩的两条：`subagent` 没有 model 参数；子 agent 互聊没有工具入口。39 项见 `references/cc-to-dsh-mapping.md`。
 
 ---
 
@@ -198,10 +196,9 @@ metadata:
 - ❌ 为「显得专业」而编排：1-2 件事就开 5 个 agent。
 - ❌ 把 `verify` 当成一个形容词：写了 `standard` 却没有 verifier 任务，等于没验证。
 - ❌ 假并行：把有依赖的任务放进同一波，然后用「可与 X 并行但需参考 X」糊过去。
-- ❌ 汇总只读 8 行摘要 / 让子 agent 返回长正文——两个极端都是把摘要当原料。
+- ❌ 汇总只读 8 行摘要，或让子 agent 返回正文。
 - ❌ 用 `workflow` 做需要中途介入的任务：脚本跑起来后无法 steer。
 - ❌ 重试超过 2 次：该问人了。
-- ❌ 不落 checkpoint 就开跑：断了只能从头来。
 - ❌ 子 agent 说完成就标 done：不校验 `output` 存在 = 把空产物当交付。
 - ❌ 在无 shell 的环境里写「测试通过」：这是编造。
 

@@ -26,20 +26,23 @@
 
 | 字段 | 约定 |
 |---|---|
-| `schema_version` | 当前 `1`。恢复时先比对；不认识的版本先降级为只读（报告结论、不自动续跑） |
+| `schema_version` | 当前 `2`。`1` 是旧格式（没有 counted / previous_outputs / pass_with_issues，validator 只告警不判错）；恢复时先比对，不认识的版本只读、不自动续跑 |
 | `orchestrator_id` / `created_at` / `updated_at` | ISO 时间戳带时区；**写之前取真实时间**（`date -u +%Y-%m-%dT%H:%M:%S%z`；Windows 用 `Get-Date -Format o`；也可直接读 `Time sampled` 之类的运行时时间），不要凭估算（凭估算会写出未来时间，恢复时的"取最新"就会错） |
 | `scenario` | `deep_research` / `code_dev` / `deploy_verify` / `general` |
 | `goal` | 用户原话，一字不改（恢复时靠它匹配意图） |
 | `mode` | 只能是 `wave` / `workflow` / `hybrid`。场景模板给的推荐值优先于全局默认 |
 | `status`（顶层） | 落盘只有**五种**：`running` / `awaiting_human` / `done` / `failed` / `aborted`。`planning` 只是内存态，**不落盘** |
 | `status`（任务） | `pending` / `running` / `done` / `failed` / `skipped` |
-| `verdict`（任务） | 仅 verifier 有：`pass` / `fail` / `null`。**判定失败 ≠ 执行失败**（见 §升级与传播） |
+| `verdict`（任务） | 仅 verifier 有：`pass` / `pass_with_issues` / `fail` / `null`。**判定失败 ≠ 执行失败**（见 §升级与传播） |
 | `verify` | `light` / `standard` / `strict` / `tournament` / `adversarial`，缺省 `standard`；检索类显式标 `light` |
 | `completion_criteria` | Standard 及以上必填：一句可检验的通过条件 |
 | `attempts` | **已派发次数**：初值 0，每次派发/重派 +1；`done` 时 ≥1（`inline` 任务完成记 1） |
 | `returns` | 被 verifier 退回的次数：初值 0，只有「验证不通过、重做」才 +1（Strict 一轮多票合计 +1） |
 | `ref` | `subagent` 返回的 agent id（UUID）；后台 workflow 的 job id（**同波多任务可共享同一 ref**）；`inline` 时为 null |
 | `output` | 工作区相对路径，必须以 `.dsh/orchestrator/output/<orchId>/` 开头；代码类任务可指向目录，另用 `artifacts: []` 列出改动的源文件 |
+| `previous_outputs` | 被 verifier 否掉的历史版本路径数组。`returns > 0` 时必填。新版另起文件名（如 `<id>-claims-r2.md`），**不要覆盖旧版** |
+| `counted` | 审计/核对类任务：`{total, pass, fail, unverifiable}`。三档相加必须等于 `total`，且与 `summary` 里的数字一致 |
+| `issue_counts` | 仅 verifier：`{blocker, major, minor}`。`verdict=pass` 但 major+blocker > 0 时应改标 `pass_with_issues` |
 | `summary` | 完成时必填：≤8 行，其中结论要点 ≤5 条，至少 1 条来源 |
 | `waves` | **派生字段**：每次写盘时按 `blockedBy` 重算并整字段覆盖，不手工维护 |
 | `hitl_gates[].at` | `before_dispatch` / `blocked` / `before_delivery`（对应 SKILL 的 Gate 1/2/3） |
@@ -49,6 +52,7 @@
 
 1. **筛选与排序**（父级只看 summary 决定哪些产物值得深读）。
 2. **不**是汇总的原料。汇总必须 `read` 关键产物的结论段——只读 summary 拼出来的报告，就是"看起来专业但没有信息量"的那种。
+3. **只放口径，不放结论**：写「数字口径（成立 X / 不成立 Y / 无法核验 Z）+ 一句结论 + 产物路径」就够。27 KB 的核对表塞进 8 行只会丢信息。
 
 ## prompt 存哪
 
@@ -105,6 +109,8 @@ checkpoint **不放**每个任务的完整 prompt（体积大且难读）。计�
 | 单波全部失败 | 不停止，按上面的失败规则逐任务处理（重试或升级） |
 | 上游**终态**为 `skipped`/`failed`（已放弃） | 下游标 `skipped`，`error="upstream failed"`，**不派发** |
 | verifier `verdict = fail` | verifier 自己 `status: done`（不算执行失败，**不触发传播**）；被验任务 `returns += 1`，未达退回上限则重派，达到则按上表升级 |
+
+**返工怎么派**：优先 `send_message(agent_id, issues 原文)` 回到出问题的那个 agent——它还记得自己查过哪一行，比新开冷 agent 重读全部输入便宜得多。复用计一次派发（`attempts += 1`，`ref` 不变）；旧产物改名保留并压进 `previous_outputs`；改完**回到原 verifier 复审**，不要换人。
 | Strict 的 3 个 verifier 有 1 个执行失败（failed） | 先按 critical 规则重派该 verifier；2 次仍 failed → Gate 2。**不要**因此自动跳过合成 |
 
 **推论**：Strict 的"≥2 通过"由合成任务读 `verdict` 自行裁决；只要 verifier 是 `done`，下游就不会因为它投了 `fail` 而被标 skipped。

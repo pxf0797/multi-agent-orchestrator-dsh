@@ -1,5 +1,53 @@
 # 变更记录
 
+## v1.5.0（2026-10-22）
+
+基线：`orch-20261022-224016-675` 这次真实编排（8 任务 / 6 agent / 2 次退回返工 / 15 分钟，产出 9 个文件）。下面 7 条都是那次跑出来的缺口，不是理论推演。
+
+### 1. 返工派给谁，协议没说
+
+**现象**：T2v 判 fail 后要改 3 处。新开 subagent 要重读 27 KB 产物 + 36 KB 原文 + 重跑取证；`send_message` 回原 agent 两分钟改完。协议只写"重派"。
+
+**改法**：`SKILL.md` §7.1、`checkpoint-protocol.md` §升级与传播 明确——返工优先 `send_message(agent_id, issues 原文)` 复用原上下文，计一次派发（`attempts += 1`、`ref` 不变），改完回**原 verifier** 复审。
+
+### 2. 被否掉的那一版没了
+
+**现象**：T2 修正版覆盖了第一版，checkpoint 只有单个 `output`；若第二次仍 fail、要交人裁决，拿不出"被否的那一版"。
+
+**改法**：新增 `previous_outputs[]`（`returns > 0` 时必填），产物另起名 `<id>-claims-r2.md`；validator 新增规则，schema 2 下缺失即报错。
+
+### 3. `pass` 但带 major，然后就结束了
+
+**现象**：T4v 给 `pass`，却列了 3 条 major（其中"#23 应判成立"是事实错误）。按旧协议 pass 即结束，错误结论被终稿继承。
+
+**改法**：`verdict` 增加 `pass_with_issues`；合成规则要求把其中的 blocker/major 逐条列入终稿「已知偏差」；新增 `issue_counts` 字段，`pass` 却带 blocker/major 时 validator 提示改标。
+
+### 4. 三档数字没人管守恒
+
+**现象**：同一次运行错两回——我给 T2 的 "32/2/1" 少了 C29 那一条（应为 31/2/2）；T3v 首轮 "13/7/2" 漏算 #20（应为 13/6/3）。两次都靠 agent 顶回来才发现。
+
+**改法**：新增 `counted: {total, pass, fail, unverifiable}`；validator 校验三档相加等于 `total`，且与 `summary` 里的数字一致。
+
+### 5. waves 只能手改
+
+**改法**：`validate-checkpoint --fix-waves` 把按 `blockedBy` 重算的 waves 直接写回文件；不开这个开关时，报错信息里会提示。
+
+### 6. summary 装不下产物
+
+**改法**：契约收紧为"摘要只放数字口径 + 一句结论 + 路径"，不复述正文（27 KB 的核对表塞进 8 行只会丢信息）。
+
+### 7. 终稿没有"依据清单"
+
+**改法**：终稿末尾必须列读了哪些产物/哪几段；validator 在 `status=done` 时软检查「未确认」「依据」两段是否存在。
+
+### 兼容性
+
+`schema_version` 升到 `2`。`1` 保持可读：上述新规则的违规只按**警告**处理，不判错，老编排不用改文件。模板同步为 2。
+
+### 测试
+
+`test/validate.test.mjs` 从 9 个用例扩到 **16 个**，新增：counted 不守恒、counted 与 summary 不一致、returns>0 缺 previous_outputs、判 fail 未返工、pass 带 major 的提示、`--fix-waves` 回写、终稿缺「依据」。
+
 ## v1.4.0（2026-10-22）
 
 新增运行时校验器——补上 v1.3.0 评审指出的那句"所有约束都是散文"的洞：`selfcheck` 只能查文档与模板是否自洽，查不出一次真实编排里"done 了但产物没落盘"。

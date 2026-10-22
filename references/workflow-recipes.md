@@ -44,8 +44,10 @@ agent(p, { model: 'deepseek-v4-pro' })   // 高价档：架构决策、冲突裁
 脚本 `return` 必须是**结构化索引**，让父级能逐任务回写 `status`/`summary`/`error`：
 
 ```js
-return { tasks: [{ id, status: 'done'|'failed'|'skipped', output, summary, error }], aborted? }
+return { tasks: [{ id, status: 'done'|'failed'|'skipped', output, summary, error, counted? }], aborted? }
 ```
+
+审计/核对类任务的 `counted` 用 `{ total, pass, fail, unverifiable }`——父级原样写进 checkpoint，validator 会校验三档相加等于 `total`（别的用途别复用这个键名，用 `progress` 之类的自己起）。
 
 不要把正文塞进 `return`——父级只拿索引，正文去文件里读。
 
