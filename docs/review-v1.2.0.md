@@ -34,17 +34,17 @@
 | # | 位置 | 现象 | 影响 | 修法 |
 |---|---|---|---|---|
 | P1-1 | [SKILL.md:141](../SKILL.md#L141) / [:152](../SKILL.md#L152) | 同波上限给 `deep_research` 设 12，紧接着承认引擎 `maxParallelToolCalls` 只有 10 | 自设策略高过引擎上限，12 路并行是错觉 | 改成 10，删掉免责句 |
-| P1-2 | [SKILL.md:218](../SKILL.md#L218)、[verification-levels.md:72](verification-levels.md#L72) | 环境探测写死 `pwsh -Command 'echo ok'`，macOS/Linux 通常没有 `pwsh` | 探测必失败 → 所有命令类验收降级为静态核对，制造"假验证" | 探测 `bash -c 'echo ok'`，或检测可用 shell 列表 |
-| P1-3 | [checkpoint-protocol.md:30](checkpoint-protocol.md#L30) | 时间戳要求 `Get-Date -Format o`（PowerShell） | 非 Windows 环境无对应命令 | 改 `date -u +%Y-%m-%dT%H:%M:%S%z` 或写成工具无关 |
-| P1-4 | [SKILL.md:60](../SKILL.md#L60)、[scenario-dags.md:22](scenario-dags.md#L22) | Gate 1 在 >6 任务时强制确认，而 `deep_research` 默认形状是 8-10 任务 | 研究类默认 100% 触发确认，与「纯读取型 ≤6 不停」冲突 | 检索分支显式标 `light` 压回 6，或把阈值提到 8 |
-| P1-5 | [workflow-recipes.md:119](workflow-recipes.md#L119) | R2 逐文件生成 `T${i+2}` | 审计 50 个文件 = 50 个任务，违反「3-10 任务」；且 id 未必与 plan 对齐，回填会错位 | 一个 batch = 一个正式任务，`tasks[]` 只留聚合结果 |
+| P1-2 | [SKILL.md:218](../SKILL.md#L218)、[verification-levels.md:72](../references/verification-levels.md#L72) | 环境探测写死 `pwsh -Command 'echo ok'`，macOS/Linux 通常没有 `pwsh` | 探测必失败 → 所有命令类验收降级为静态核对，制造"假验证" | 探测 `bash -c 'echo ok'`，或检测可用 shell 列表 |
+| P1-3 | [checkpoint-protocol.md:30](../references/checkpoint-protocol.md#L30) | 时间戳要求 `Get-Date -Format o`（PowerShell） | 非 Windows 环境无对应命令 | 改 `date -u +%Y-%m-%dT%H:%M:%S%z` 或写成工具无关 |
+| P1-4 | [SKILL.md:60](../SKILL.md#L60)、[scenario-dags.md:22](../references/scenario-dags.md#L22) | Gate 1 在 >6 任务时强制确认，而 `deep_research` 默认形状是 8-10 任务 | 研究类默认 100% 触发确认，与「纯读取型 ≤6 不停」冲突 | 检索分支显式标 `light` 压回 6，或把阈值提到 8 |
+| P1-5 | [workflow-recipes.md:119](../references/workflow-recipes.md#L119) | R2 逐文件生成 `T${i+2}` | 审计 50 个文件 = 50 个任务，违反「3-10 任务」；且 id 未必与 plan 对齐，回填会错位 | 一个 batch = 一个正式任务，`tasks[]` 只留聚合结果 |
 
 ### P2 · 卫生与文档漂移
 
 | # | 位置 | 现象 |
 |---|---|---|
 | P2-1 | [SKILL.md:262](../SKILL.md#L262) | 说"检查 5 件事"，`selfcheck.mjs` 实际跑 6 项（多一项"文件引用"） |
-| P2-2 | [cc-to-dsh-mapping.md:25](cc-to-dsh-mapping.md#L25) | 优先级写 `100 > 200 > 500 > bundled(600)`；实际为 100 project-dsh / 200 project-agents / 300 custom / 400 user-dsh / 500 user-agents，bundled 不在 rank 表 |
+| P2-2 | [cc-to-dsh-mapping.md:25](../references/cc-to-dsh-mapping.md#L25) | 优先级写 `100 > 200 > 500 > bundled(600)`；实际为 100 project-dsh / 200 project-agents / 300 custom / 400 user-dsh / 500 user-agents，bundled 不在 rank 表 |
 | P2-3 | [SKILL.md:3](../SKILL.md#L3) | `version:` 不是受支持的 frontmatter 字段（支持 `name`/`description`/`whenToUse`/`metadata`/`disable-model-invocation`/`user-invocable`），应放 `metadata.version` |
 | P2-4 | [SKILL.md:258](../SKILL.md#L258) | `node tools/selfcheck.mjs` 的代码块被标成 ```powershell |
 | P2-5 | — | SKILL.md 9,990 字符，超过 DSH 官方出货 skill 的 ~8,192 字符预算；本次加载未截断，但余量已耗尽 |
