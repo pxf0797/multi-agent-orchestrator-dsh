@@ -1,0 +1,15 @@
+# macOS / Finder
+.DS_Store
+
+# Node
+node_modules/
+*.log
+npm-debug.log*
+
+# 编排运行时状态（属于 workspace，不该进仓库）
+.dsh/orchestrator/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
