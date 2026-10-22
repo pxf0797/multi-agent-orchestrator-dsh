@@ -1,6 +1,6 @@
 {
   "name": "multi-agent-orchestrator-dsh",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "private": true,
   "description": "DSH-native multi-agent orchestration skill: DAG task graph, wave dispatch, checkpoint resume",
   "license": "MIT",
@@ -8,7 +8,8 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node tools/selfcheck.mjs",
-    "selfcheck": "node tools/selfcheck.mjs"
+    "test": "node tools/selfcheck.mjs && node test/validate.test.mjs",
+    "selfcheck": "node tools/selfcheck.mjs",
+    "validate": "node tools/validate-checkpoint.mjs"
   }
 }

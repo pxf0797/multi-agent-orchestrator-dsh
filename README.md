@@ -96,7 +96,10 @@ wave 3   T6  合成（inline，父级自己写，blockedBy 所有 verifier）
 │   ├── role-templates.md          # 11 个角色的身份段与验收清单
 │   └── cc-to-dsh-mapping.md       # 与上游 Claude Code 版的逐项差异
 ├── templates/checkpoint.example.json
-├── tools/selfcheck.mjs            # 8 项结构自检
+├── tools/
+│   ├── selfcheck.mjs              # 8 项结构自检（文档 / 模板）
+│   └── validate-checkpoint.mjs    # 运行时校验一份真实 checkpoint
+├── test/validate.test.mjs         # validator 的 9 个正负例
 └── docs/review-v1.2.0.md          # v1.2.0 评审：已核实事实 + 待修问题
 ```
 
@@ -109,15 +112,28 @@ wave 3   T6  合成（inline，父级自己写，blockedBy 所有 verifier）
 └── output/<orchId>/            # 子 agent 的完整产物 + final-report.md
 ```
 
-## 自检
+## 自检与校验
 
-改完本 skill 的任意文件后：
+两套检查，分工不同：`selfcheck` 查**文档/模板**结构，`validate-checkpoint` 查**跑起来的编排状态**。
 
 ```bash
-node tools/selfcheck.mjs      # 或 npm test
+npm test                        # = selfcheck + validator 的 9 个用例
+node tools/selfcheck.mjs        # 只查结构自洽
+
+node tools/validate-checkpoint.mjs .dsh/orchestrator/checkpoints/<orchId>.json
 ```
 
-检查 8 项：waves 是否满足波次公式、`plan`/`output` 是否同基准且带 `.dsh/orchestrator/` 前缀、枚举是否闭合（status / mode / role）、任务数是否在 3-10、`strict|tournament|adversarial` 是否都展开了 verifier、文件引用是否存在、SKILL.md 是否超出字符预算、以及文档里声明的检查项数是否与实际一致。CI 在每次 push 时跑同一套。
+`selfcheck` 查 8 项：waves 公式、`plan`/`output` 路径基准、枚举闭合、任务数与角色池、verifier 展开、文件引用、SKILL.md 字符预算、以及文档里声明的项数是否与实际一致。
+
+`validate-checkpoint` 查的是真实状态：waves 能否从 `blockedBy` 重算、done 任务的产物是否真存在（空文件也算错）、`standard`/`strict` 的 verifier 是否真的展开且 `blockedBy` 指回被验任务、失败是否按协议传播、`attempts`/`summary`/`verdict` 是否自洽。
+
+| 退出码 | 含义 |
+|---|---|
+| `0` | 通过（可能有警告，例如 goal 还是模板占位符） |
+| `1` | 有错误，逐条列出 |
+| `2` | 用法错误 / JSON 解析失败 |
+
+选项：`--root <workspace>` 指定工作区根（默认当前目录）、`--no-files` 跳过文件存在性、`--json` 输出机器可读结果。
 
 ## 已在运行时核实的事实
 
@@ -146,7 +162,7 @@ DSH 版不是照搬：上游的调度循环建立在「后台完成通知驱动 
 
 见 [docs/review-v1.2.0.md](docs/review-v1.2.0.md) 与 [CHANGELOG.md](CHANGELOG.md)。v1.3.0 已修掉跨平台探测、并发上限、Gate 1 阈值、R2 任务映射等问题；仍存在的：
 
-- `selfcheck` 只校验结构，查不出语义级矛盾（例如新增规则与旧规则互相拆台）。
+- `selfcheck` 只查结构、`validate-checkpoint` 只查状态，都查不出语义级矛盾（例如新增规则与旧规则互相拆台）。
 - 模型档位依赖部署目录：`deepseek-reasoner` 能被接受，但不在本机模型目录里，是否真路由到高价档未经核实。
 - `workflow` 脚本内部无断点，一次调用断了只能整段重跑。
 

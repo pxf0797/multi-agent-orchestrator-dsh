@@ -4,7 +4,7 @@ description: "多 Agent 编排：把复杂目标拆成 DAG 任务图，用并行
 whenToUse: "目标可拆成 >=3 个相互独立或分层的子任务，且用户期待一个汇总结果时；或用户明确说「并行/同时/多个 agent/swarm/工作流」；或上次编排中断、用户说继续。"
 user-invocable: true
 metadata:
-  version: 1.3.0
+  version: 1.4.0
 ---
 
 # Multi-Agent Orchestrator（DSH 版）

@@ -89,6 +89,8 @@ checkpoint **不放**每个任务的完整 prompt（体积大且难读）。计�
 8. 读 plans/<orchId>.md 取回该任务的 prompt；plan 缺失时不要即兴重写，先问用户。
 ```
 
+手边有 checkpoint 文件时先跑一次 `node tools/validate-checkpoint.mjs <file>`：它把第 4 步和第 6 步的检查一次做完（waves 能否重算、done 的产物在不在、verifier 有没有真的展开），带 `✗` 的项直接按失败处理。
+
 ## 升级与传播
 
 **顺序很重要**：先按 criticality 处置失败任务，**终态确定后**才向下游传播。

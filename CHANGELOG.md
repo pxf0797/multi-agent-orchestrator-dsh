@@ -1,5 +1,33 @@
 # 变更记录
 
+## v1.4.0（2026-10-22）
+
+新增运行时校验器——补上 v1.3.0 评审指出的那句"所有约束都是散文"的洞：`selfcheck` 只能查文档与模板是否自洽，查不出一次真实编排里"done 了但产物没落盘"。
+
+### 新增 `tools/validate-checkpoint.mjs`
+
+输入一份真实 checkpoint，校验：
+
+- 顶层：`schema_version`、`orchestrator_id` 格式、带时区的 ISO 时间戳、`scenario`/`mode`/顶层 `status` 枚举、`plan` 前缀、`goal` 非空
+- 任务表：3-10 个、id 唯一且合规、`role` 在角色池内、`blockedBy` 只能指向**更早**的任务、`verify`/`dispatch`/`criticality`/任务 `status` 枚举、`completion_criteria` 在 standard 及以上必填
+- **waves 可重算**：按 `blockedBy` 重算并与文件里的 `waves` 逐波比对，不一致直接报错并给出期望值
+- **verifier 真的展开了**：`standard`→`<id>v`、`strict`→`v1..v3`、`tournament|adversarial`→至少一个 `*v`，且 verifier 的 `blockedBy` 必须包含被验任务
+- **产物真的存在**：done 任务的 `output` 存在且非空；顶层 `done` 时还要求全部任务终态、`final-report.md` 存在
+- **口径自洽**：done ⇒ `attempts ≥ 1` 且有 `summary`；`verdict` 只出现在 verifier 上；`upstream failed` 要真的有失败上游；verifier 判 `fail` 却下游已 `done` 会告警
+
+退出码：`0` 通过（可有警告）/ `1` 有错误 / `2` 用法或解析错误。选项：`--root <ws>`、`--no-files`、`--json`。
+
+### 新增测试
+
+`test/validate.test.mjs`（`node:test`，9 个用例）：模板通过、waves 改坏、缺 verifier、前向依赖（并断言不栈溢出）、done 无产物、done 但 attempts=0、坏时间戳/枚举、完整 workspace 通过、缺参数 exit 2。
+
+`npm test` 现在是 `selfcheck + validate 用例`，CI 改跑 `npm test`。
+
+### 其他
+
+- `checkpoint-protocol.md` 恢复流程后补一句：手边有 checkpoint 时先跑 validator，把"产物在不在 / waves 对不对 / verifier 有没有展开"一次查完。
+- README 增加「自检与校验」分工说明与退出码表。
+
 ## v1.3.0（2026-10-22）
 
 基线：[v1.2.0 评审](docs/review-v1.2.0.md)。本轮修完 P1 全部 5 条、P2 全部 5 条，并吸收了已下线的 `orchestrate` skill 中值得保留的部分。

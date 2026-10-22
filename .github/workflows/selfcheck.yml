@@ -19,5 +19,5 @@ jobs:
         with:
           node-version: 20
 
-      - name: Run skill selfcheck (8 structural checks)
-        run: node tools/selfcheck.mjs
+      - name: Selfcheck (8 structural checks) + validator tests
+        run: npm test
